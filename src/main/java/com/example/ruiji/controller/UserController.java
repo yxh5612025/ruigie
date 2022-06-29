@@ -7,6 +7,7 @@ import com.example.ruiji.entity.User;
 import com.example.ruiji.service.IUserService;
 import com.example.ruiji.utils.ValidateCodeUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,8 +16,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 
 import org.springframework.web.bind.annotation.RestController;
 
+import javax.annotation.Resource;
 import javax.servlet.http.HttpSession;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
@@ -32,6 +35,8 @@ import java.util.Map;
 public class UserController {
     @Autowired
     private IUserService userService;
+    @Resource
+    private RedisTemplate redisTemplate;
 
     /**
      * 发送手机短信验证码
@@ -53,6 +58,8 @@ public class UserController {
 
             //需要将生成的验证码保存到Session
             session.setAttribute(phone,code);
+            //将生成的验证码存到redis，并且设置有效期
+            redisTemplate.opsForValue().set(phone,code,1, TimeUnit.MINUTES);
 
             return R.success("手机验证码短信发送成功");
         }
@@ -77,7 +84,10 @@ public class UserController {
         String code = map.get("code").toString();
 
         //从Session中获取保存的验证码
-        Object codeInSession = session.getAttribute(phone);
+//        Object codeInSession = session.getAttribute(phone);
+
+        //从redis中获取缓存的验证码
+        Object codeInSession = redisTemplate.opsForValue().get(phone);
 
         //进行验证码的比对（页面提交的验证码和Session中保存的验证码比对）
         if(codeInSession != null && codeInSession.equals(code)){
@@ -95,6 +105,8 @@ public class UserController {
                 userService.save(user);
             }
             session.setAttribute("user",user.getId());
+            //登录成功删除验证码
+            redisTemplate.delete(phone);
             return R.success(user);
         }
         return R.error("登录失败");
